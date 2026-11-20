@@ -18,6 +18,7 @@ on:
       - "scripts/build-cross.sh"
       - "scripts/build-docker.sh"
       - "Dockerfile"
+      - "rust-toolchain.toml"
       - ".dockerignore"
 
 permissions: {}
@@ -51,7 +52,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
-          toolchain: stable
+          toolchain: 1.100.0
       - name: Install cross from Cargo
         uses: baptiste0928/cargo-install@8195d4f734a149db85385bb4102b42efcd373759 # v3.5.0
         with:
