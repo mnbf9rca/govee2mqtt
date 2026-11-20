@@ -50,6 +50,8 @@ jobs:
           driver-opts: image=moby/buildkit:v0.35.1
       - name: Install Rust
         uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
       - name: Install cross from Cargo
         uses: baptiste0928/cargo-install@8195d4f734a149db85385bb4102b42efcd373759 # v3.5.0
         with:
@@ -134,10 +136,9 @@ jobs:
         with: *registry-credentials
       - name: Resolve the base image and app metadata
         id: app
-        env:
-          ARCH: ${{ matrix.arch }}
         run: |
-          base="ghcr.io/home-assistant/$ARCH-base-debian:bookworm"
+          base=$(sed -n 's/^ARG BUILD_FROM=//p' addon/Dockerfile)
+          test -n "$base"
           digest=$(docker buildx imagetools inspect "$base" --format '{{.Manifest.Digest}}')
           echo "base=${base%:*}@$digest" >> "$GITHUB_OUTPUT"
           version=$(yq -er '.version' addon/config.yaml)
