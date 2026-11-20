@@ -1,6 +1,6 @@
 name: Govee to MQTT Bridge (mnbf9rca)
 image: ghcr.io/mnbf9rca/govee2mqtt-{arch}
-version: "2026.03.25-ab9deb66"
+version: "2026.11.21-6b6e1875"
 slug: govee2mqtt
 description: Control Govee Devices
 url: https://github.com/mnbf9rca/govee2mqtt
