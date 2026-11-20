@@ -696,19 +696,23 @@ impl State {
 }
 
 fn extra_scene_models(device: &Device) -> anyhow::Result<Vec<String>> {
+    if device.device_type() != DeviceType::Light {
+        return Ok(vec![]);
+    }
+    let value = crate::opt_env_var::<String>("GOVEE_EXTRA_SCENE_MODELS")?;
+    Ok(parse_extra_scene_models(&device.sku, value.as_deref()))
+}
+
+fn parse_extra_scene_models(sku: &str, value: Option<&str>) -> Vec<String> {
     let mut models = vec![];
-    if device.device_type() == DeviceType::Light {
-        if let Some(value) = crate::opt_env_var::<String>("GOVEE_EXTRA_SCENE_MODELS")? {
-            for model in value.split(',').map(str::trim) {
-                if !model.is_empty() && !model.eq_ignore_ascii_case(&device.sku) {
-                    models.push(model.to_ascii_uppercase());
-                }
-            }
-            models.sort();
-            models.dedup();
+    for model in value.unwrap_or_default().split(',').map(str::trim) {
+        if !model.is_empty() && !model.eq_ignore_ascii_case(sku) {
+            models.push(model.to_ascii_uppercase());
         }
     }
-    Ok(models)
+    models.sort();
+    models.dedup();
+    models
 }
 
 async fn lan_scene_names(model: &str) -> anyhow::Result<Vec<String>> {
@@ -745,6 +749,23 @@ pub fn sort_and_dedup_scenes(mut scenes: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extra_scene_model_parsing() {
+        assert_eq!(
+            parse_extra_scene_models("H619A", Some(" h608b, H619a, ,H608B,h6008 ")),
+            vec!["H6008".to_string(), "H608B".to_string()]
+        );
+        assert!(parse_extra_scene_models("H619A", None).is_empty());
+        assert!(parse_extra_scene_models("H619A", Some(" , ")).is_empty());
+    }
+
+    #[test]
+    fn extra_scene_models_ignore_non_lights() {
+        let device = Device::new("H7160", "test");
+        assert_eq!(device.device_type(), DeviceType::Humidifier);
+        assert!(extra_scene_models(&device).unwrap().is_empty());
+    }
 
     #[test]
     fn borrowed_scene_round_trip() {
