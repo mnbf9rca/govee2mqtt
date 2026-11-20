@@ -100,6 +100,7 @@ impl Cache {
 
     fn purge(&mut self) -> anyhow::Result<()> {
         self.clear_rows(None)?;
+        self.next_gc = Instant::now() + Duration::from_secs(900 * 1024);
         self.revision = self.revision.wrapping_add(1);
         Ok(())
     }
@@ -110,10 +111,8 @@ impl Cache {
             let mut statement = transaction.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name GLOB 'topic_*'",
             )?;
-            let tables = statement
-                .query_map([], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?;
-            tables
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<Result<Vec<_>, _>>()?
         };
         for table in tables {
             let table = table.replace('"', r#""""#);
@@ -374,11 +373,9 @@ mod tests {
             .lock()
             .write(options(), &serde_json::to_vec(&entry).unwrap(), 0)
             .unwrap();
-        let value = cache_get_with::<u32, _>(&cache, options(), async {
-            anyhow::bail!("offline")
-        })
-        .await
-        .unwrap();
+        let value = cache_get_with::<u32, _>(&cache, options(), async { anyhow::bail!("offline") })
+            .await
+            .unwrap();
         assert_eq!(value, 7);
         assert!(stored_entry(&cache).expires > Utc::now());
 
@@ -388,11 +385,9 @@ mod tests {
             .lock()
             .write(options(), &serde_json::to_vec(&entry).unwrap(), 0)
             .unwrap();
-        let err = cache_get_with::<u32, _>(&cache, no_stale, async {
-            anyhow::bail!("new error")
-        })
-        .await
-        .unwrap_err();
+        let err = cache_get_with::<u32, _>(&cache, no_stale, async { anyhow::bail!("new error") })
+            .await
+            .unwrap_err();
         assert_eq!(err.to_string(), "new error");
         let err = cache_get_with::<u32, _>(&cache, no_stale, async {
             Ok(CacheComputeResult::Value(99))
@@ -459,7 +454,9 @@ mod tests {
             .await
             .unwrap();
         cache_get_with(&cache, options(), async {
+            cache.lock().next_gc = Instant::now();
             cache.lock().purge()?;
+            assert!(cache.lock().next_gc > Instant::now());
             Ok(CacheComputeResult::Value(3u32))
         })
         .await
