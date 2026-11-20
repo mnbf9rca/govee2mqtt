@@ -64,6 +64,7 @@ When in doubt, use the small path and say so.
 
 ## Testing and verification
 
+- A dependency update made by hand uses only versions published at least 7 days ago, the same cooldown Dependabot applies; only the smallest version that fixes a known advisory may be newer.
 - This machine may have no Rust toolchain. Do not install one. `.github/workflows/pr.yml` runs `cargo build --all`, `cargo test --all` and `cargo fmt --all -- --check` on every pull request to `main`, and that is the test run. Say plainly when something is read but not compiled.
 - The `test-addon` job builds the app image from the fork's published `:latest` image. It fails until the first build on `main` has published that image. Report that as expected; do not work round it.
 - **A claim about what a light does is proved on a light.** Agents in this repository cannot reach the lights or Home Assistant. Real-device checks are done by the owner with the chief of staff. Do not report device behaviour as verified because the code reads correctly or a test passes.
