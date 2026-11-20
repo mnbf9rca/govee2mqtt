@@ -2,7 +2,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:trixie
 FROM ghcr.io/mnbf9rca/govee2mqtt:latest AS govee2mqtt
 FROM $BUILD_FROM
 LABEL io.hass.type="addon" \
-      org.opencontainers.image.title="Home Assistant Add-on: Govee to MQTT Bridge" \
+      org.opencontainers.image.title="Home Assistant Add-on: Govee to MQTT Bridge (mnbf9rca)" \
       org.opencontainers.image.description="Acts as a bridge between Govee devices and Home Assistant, via the Home Assistant MQTT Integration." \
       org.opencontainers.image.source="https://github.com/mnbf9rca/govee2mqtt" \
       org.opencontainers.image.licenses="MIT"
