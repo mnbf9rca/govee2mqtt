@@ -232,10 +232,7 @@ where
                 cache_entry.replace(entry);
             }
             Err(err) => {
-                log::warn!(
-                    "Error parsing CacheEntry: {err:#} {:?}",
-                    String::from_utf8_lossy(current)
-                );
+                log::warn!("Error parsing CacheEntry: {err:#}");
             }
         }
     }
