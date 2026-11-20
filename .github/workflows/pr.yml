@@ -26,9 +26,7 @@ jobs:
         toolchain: 1.100.0
         components: rustfmt, clippy
     - name: Build
-      run: |
-        cargo build --all
-        git diff --exit-code -- Cargo.lock
+      run: cargo build --locked --all
     - name: Run tests
       run: cargo test --all -- --show-output
     - name: Check formatting
