@@ -88,9 +88,8 @@ jobs:
       - name: Restore executable permissions after artifact download
         run: chmod +x docker-target/linux/{amd64,arm64}/govee
       - *setup-buildx
-      - &registry-login
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with: &registry-credentials
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ github.token }}
@@ -112,66 +111,83 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           push: true
 
-  test-addon:
+  build-addon:
     if: github.ref_type != 'tag'
     needs: build
-    runs-on: ubuntu-latest
+    strategy: &addon-matrix
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: read
     steps: &addon-steps
       - *checkout
-      - *registry-login
-      - *setup-buildx
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
-      - name: Build add-on images and sign published digests
-        shell: bash
+      - name: Log in to read the bridge image
+        if: github.ref_type != 'tag'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with: *registry-credentials
+      - name: Resolve the base image and app metadata
+        id: app
         env:
-          PUBLISH: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          version=$(yq -r '.version' addon/config.yaml)
-          if [[ "$PUBLISH" == true ]]; then
-            version=$GITHUB_REF_NAME
-          fi
-          labels=(
-            --label io.hass.type=addon
-            --label "io.hass.version=$version"
-            --label "io.hass.name=$(yq -r '.name' addon/config.yaml)"
-            --label "io.hass.description=$(yq -r '.description' addon/config.yaml)"
-            --label "io.hass.url=$(yq -r '.url' addon/config.yaml)"
-            --label "org.opencontainers.image.version=$version"
-            --label "org.opencontainers.image.created=$(date -u +%FT%TZ)"
-          )
-          while IFS= read -r label; do
-            labels+=(--label "$label")
-          done < <(yq -r '.labels | to_entries[] | .key + "=" + .value' addon/build.yaml)
+          base="ghcr.io/home-assistant/$ARCH-base-debian:bookworm"
+          digest=$(docker buildx imagetools inspect "$base" --format '{{.Manifest.Digest}}')
+          echo "base=${base%:*}@$digest" >> "$GITHUB_OUTPUT"
+          version=$(yq -er '.version' addon/config.yaml)
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version=$GITHUB_REF_NAME; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          yq -er 'to_entries | .[] | select(.key == "name" or .key == "description" or .key == "url") | .key + "=" + .value' addon/config.yaml >> "$GITHUB_OUTPUT"
+      - name: Install Cosign for the test build
+        if: github.ref_type != 'tag'
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      # build-image verifies the base itself only when publishing.
+      - name: Verify the Home Assistant base for the test build
+        if: github.ref_type != 'tag'
+        uses: home-assistant/builder/actions/cosign-verify@7412f0023ea9b6e58e8bb5059f1660f51376f49a # 2026.09.0
+        with:
+          image: ${{ steps.app.outputs.base }}
+          cosign-identity: &base-identity '^https://github\.com/home-assistant/docker-base/\.github/workflows/[^@]+@refs/tags/.+$'
+      - name: Build Home Assistant app
+        uses: home-assistant/builder/actions/build-image@7412f0023ea9b6e58e8bb5059f1660f51376f49a # 2026.09.0
+        with:
+          arch: ${{ matrix.arch }}
+          context: addon
+          image: ${{ env.IMAGE }}-${{ matrix.arch }}
+          image-tags: |
+            ${{ steps.app.outputs.version }}
+            latest
+          version: ${{ steps.app.outputs.version }}
+          labels: |
+            io.hass.name=${{ steps.app.outputs.name }}
+            io.hass.description=${{ steps.app.outputs.description }}
+            io.hass.url=${{ steps.app.outputs.url }}
+          build-args: BUILD_FROM=${{ steps.app.outputs.base }}
+          cosign-base-verify: ${{ steps.app.outputs.base }}
+          cosign-base-identity: *base-identity
+          container-registry-password: ${{ github.token }}
+          push: ${{ github.ref_type == 'tag' }}
 
-          for arch in amd64 aarch64; do
-            platform=linux/amd64
-            if [[ "$arch" == aarch64 ]]; then platform=linux/arm64; fi
-            base=$(yq -r ".build_from.$arch" addon/build.yaml)
-            digest=$(docker buildx imagetools inspect "$base" --format '{{.Manifest.Digest}}')
-            base="${base%:*}@$digest"
-            cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              --certificate-identity-regexp '^https://github\.com/home-assistant/docker-base/\.github/workflows/[^@]+@refs/tags/.+$' "$base"
-
-            image="$IMAGE-$arch"
-            options=()
-            if [[ "$PUBLISH" == true ]]; then options+=(--push); fi
-            docker buildx build --pull --platform "$platform" --build-arg "BUILD_FROM=$base" \
-              --build-arg "BUILD_VERSION=$version" --build-arg "BUILD_ARCH=$arch" \
-              "${labels[@]}" --label "io.hass.arch=$arch" --tag "$image:$version" --tag "$image:latest" \
-              --metadata-file "$RUNNER_TEMP/addon.json" "${options[@]}" addon
-            if [[ "$PUBLISH" == true ]]; then
-              digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/addon.json")
-              cosign sign --yes "$image@$digest"
-            fi
-          done
+  # Keep the single required check for both native builds.
+  test-addon:
+    if: always() && github.ref_type != 'tag'
+    needs: build-addon
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - run: test "${{ needs.build-addon.result }}" = success
 
   addon:
     if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: publish
-    runs-on: ubuntu-latest
+    strategy: *addon-matrix
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
