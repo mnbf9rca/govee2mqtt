@@ -81,6 +81,11 @@ configuration:
       of your Govee devices, assuming that they are configured with
       static IP addresses and that they are reachable from the
       home assistant machine.
+  extra_scene_models:
+    name: Extra scene models
+    description: >-
+      Enter comma-separated Govee models, for example H608B. Their scenes
+      appear as Name (MODEL) and require LAN control to play on a light.
   global_broadcast:
     name: Send discovery to global broadcast address
     description: >-

@@ -43,3 +43,4 @@ schema:
   broadcast_all: "bool?"
   global_broadcast: "bool?"
   scan: "str?"
+  extra_scene_models: "str?"
