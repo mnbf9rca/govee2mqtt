@@ -20,195 +20,160 @@ on:
       - "Dockerfile"
       - ".dockerignore"
 
+permissions: {}
+
 env:
   IMAGE: ghcr.io/mnbf9rca/govee2mqtt
 
 jobs:
   build:
+    name: build (linux/${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - linux/amd64
-          - linux/arm64
+        arch: [amd64, arm64]
     permissions:
       contents: read
-      packages: write
     steps:
-      - uses: actions/checkout@v6
-      - name: Docker meta
-        if: ${{ github.event_name != 'pull_request' }}
-        id: meta
-        uses: docker/metadata-action@v5
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch,enable=${{ github.ref != 'refs/heads/main' }}
-            type=ref,event=pr
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Log in to the Container registry
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: docker/login-action@v4
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
-          registry: https://ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: "Install Rust"
-        uses: dtolnay/rust-toolchain@stable
-      - name: "Install cross from Cargo"
-        uses: baptiste0928/cargo-install@v3
+          image: tonistiigi/binfmt:qemu-v10.2.3-68
+      - &setup-buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
-          crate: "cross"
+          version: v0.39.1
+          driver-opts: image=moby/buildkit:v0.35.1
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - name: Install cross from Cargo
+        uses: baptiste0928/cargo-install@8195d4f734a149db85385bb4102b42efcd373759 # v3.5.0
+        with:
+          crate: cross
+          version: "0.2.5"
       - name: Build executable
-        run: ./scripts/build-cross.sh ${{ matrix.platform }}
-      - name: Build No Push
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: docker/build-push-action@v7
+        run: ./scripts/build-cross.sh linux/${{ matrix.arch }}
+      - name: Test bridge image
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: Dockerfile
-          platforms: ${{ matrix.platform }}
-          push: false
-      - name: Build and push by digest
-        if: ${{ github.event_name != 'pull_request' }}
-        id: build
-        uses: docker/build-push-action@v7
+          platforms: linux/${{ matrix.arch }}
+      - name: Upload executable for publishing
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          context: .
-          file: Dockerfile
-          platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-          push: ${{ github.event_name != 'pull_request' }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-      - name: Export digest
-        if: ${{ github.event_name != 'pull_request' }}
-        id: digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-          echo "DIGEST_NAME=$(echo ${{ matrix.platform }} | sed 's,/,-,g')" >> $GITHUB_OUTPUT
-      - name: Upload digest
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: digest-${{ steps.digest.outputs.DIGEST_NAME }}
-          path: /tmp/digests/*
+          name: ${{ matrix.arch }}
+          path: docker-target/linux/${{ matrix.arch }}/govee
           if-no-files-found: error
           retention-days: 1
 
-  merge:
-    if: ${{ github.event_name != 'pull_request' }}
+  publish:
+    if: github.event_name == 'push'
+    needs: build
     runs-on: ubuntu-latest
-    needs:
-      - build
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Download digests
-        uses: actions/download-artifact@v8
+      - *checkout
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: digest-*
-          merge-multiple: true
-          path: /tmp/digests
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Docker meta
+          pattern: '*64'
+          path: docker-target/linux
+      - name: Restore executable permissions after artifact download
+        run: chmod +x docker-target/linux/{amd64,arm64}/govee
+      - *setup-buildx
+      - &registry-login
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
+          flavor: latest=false
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch,enable=${{ github.ref != 'refs/heads/main' }}
-            type=ref,event=tag,enable=${{ github.ref_type == 'tag' }}
-            type=ref,event=pr
-      - name: Login to GHCR
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: docker/login-action@v4
+            type=ref,event=tag
+      - name: Publish bridge image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          registry: https://ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create manifest list and push
-        working-directory: /tmp/digests
-        run: |
-          docker buildx imagetools create \
-            ${{ github.event_name == 'pull_request' && '--dry-run' || '' }} \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
-  addon:
-    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
-    runs-on: ubuntu-latest
-    needs:
-      - merge
-    permissions:
-      contents: read
-      id-token: write
-      packages: write
-    steps:
-      - uses: actions/checkout@v6
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: https://ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Apply tag to version
-        run: ./scripts/apply-tag.sh
-      - name: Build and Publish Home Assistant Add On
-        uses: home-assistant/builder@2026.02.1
-        with:
-          args: |
-            --amd64 \
-            --aarch64 \
-            --cosign \
-            --target /data/addon
+          context: .
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
 
   test-addon:
-    if: ${{ ! ( github.event_name == 'push' && github.ref_type == 'tag' ) }}
+    if: github.ref_type != 'tag'
+    needs: build
     runs-on: ubuntu-latest
-    needs:
-      # Note! Despite the dependency edge here to the build steps above,
-      # this test-addon build flow will build the addon from the latest
-      # images that were published to ghcr.io, which is NOT the ones we
-      # build here because we don't push those when we trigger the conditions
-      # for this to build.
-      # Thats "OK" because the addon build doesn't actually run anything
-      # from that container image.
-      # The test-addon flow is validating that the addon build configuration
-      # looks plausible, so the prior image should be sufficient for that.
-      # If you are reading this and know how to get the bits above funnelled
-      # into the hass build below, and it isn't eye-bleedingly-gnarly, then
-      # please submit a PR!
-      - build
     permissions:
       contents: read
-      id-token: write
       packages: read
-    steps:
-      - uses: actions/checkout@v6
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: https://ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Test Build Home Assistant Add On
-        uses: home-assistant/builder@2026.02.1
-        with:
-          args: |
-            --test \
-            --amd64 \
-            --aarch64 \
-            --cosign \
-            --target /data/addon
+    steps: &addon-steps
+      - *checkout
+      - *registry-login
+      - *setup-buildx
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - name: Build add-on images and sign published digests
+        shell: bash
+        env:
+          PUBLISH: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+        run: |
+          version=$(yq -r '.version' addon/config.yaml)
+          if [[ "$PUBLISH" == true ]]; then
+            version=$GITHUB_REF_NAME
+          fi
+          labels=(
+            --label io.hass.type=addon
+            --label "io.hass.version=$version"
+            --label "io.hass.name=$(yq -r '.name' addon/config.yaml)"
+            --label "io.hass.description=$(yq -r '.description' addon/config.yaml)"
+            --label "io.hass.url=$(yq -r '.url' addon/config.yaml)"
+            --label "org.opencontainers.image.version=$version"
+            --label "org.opencontainers.image.created=$(date -u +%FT%TZ)"
+          )
+          while IFS= read -r label; do
+            labels+=(--label "$label")
+          done < <(yq -r '.labels | to_entries[] | .key + "=" + .value' addon/build.yaml)
+
+          for arch in amd64 aarch64; do
+            platform=linux/amd64
+            if [[ "$arch" == aarch64 ]]; then platform=linux/arm64; fi
+            base=$(yq -r ".build_from.$arch" addon/build.yaml)
+            digest=$(docker buildx imagetools inspect "$base" --format '{{.Manifest.Digest}}')
+            base="${base%:*}@$digest"
+            cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp '^https://github\.com/home-assistant/docker-base/\.github/workflows/[^@]+@refs/tags/.+$' "$base"
+
+            image="$IMAGE-$arch"
+            options=()
+            if [[ "$PUBLISH" == true ]]; then options+=(--push); fi
+            docker buildx build --pull --platform "$platform" --build-arg "BUILD_FROM=$base" \
+              --build-arg "BUILD_VERSION=$version" --build-arg "BUILD_ARCH=$arch" \
+              "${labels[@]}" --label "io.hass.arch=$arch" --tag "$image:$version" --tag "$image:latest" \
+              --metadata-file "$RUNNER_TEMP/addon.json" "${options[@]}" addon
+            if [[ "$PUBLISH" == true ]]; then
+              digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/addon.json")
+              cosign sign --yes "$image@$digest"
+            fi
+          done
+
+  addon:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps: *addon-steps
