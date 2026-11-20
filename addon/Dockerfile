@@ -1,4 +1,4 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:bookworm
+ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:trixie
 FROM ghcr.io/mnbf9rca/govee2mqtt:latest AS govee2mqtt
 FROM $BUILD_FROM
 LABEL io.hass.type="addon" \

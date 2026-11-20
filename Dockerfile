@@ -1,7 +1,7 @@
 ####################################################################################################
 ## Builder
 ####################################################################################################
-FROM --platform=$BUILDPLATFORM alpine:latest AS builder
+FROM --platform=$BUILDPLATFORM alpine:3.24.4 AS builder
 ARG TARGETPLATFORM
 
 RUN adduser \
@@ -22,7 +22,7 @@ WORKDIR /data
 ####################################################################################################
 ## Final image
 ####################################################################################################
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/cc-debian13:latest
 
 # Import from builder.
 COPY --from=builder /etc/passwd /etc/passwd
