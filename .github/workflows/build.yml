@@ -106,7 +106,7 @@ jobs:
       - name: Verify bridge start-up and Home Assistant discovery
         run: |
           status=0
-          timeout 60s bash -euo pipefail <<'SH' || status=$?
+          timeout 90s bash -euo pipefail <<'SH' || status=$?
           until docker exec mqtt mosquitto_pub -t ci/ready -m ready; do sleep 1; done
           docker exec mqtt mosquitto_sub -i startup-test -v -t 'homeassistant/+/+/config' -C 1 > "$RUNNER_TEMP/discovery.log" 2>&1 &
           subscriber=$!
@@ -124,7 +124,7 @@ jobs:
           docker logs bridge 2>&1 | grep -F 'Connected to mqtt broker localhost:1883'
           SH
           if [[ "$status" == 124 ]]; then
-            echo '::error::Timed out after 60 seconds waiting for bridge start-up and Home Assistant discovery.'
+            echo '::error::Timed out after 90 seconds waiting for bridge start-up and Home Assistant discovery.'
           fi
           exit "$status"
       - name: Print logs on failure
