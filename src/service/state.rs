@@ -597,31 +597,28 @@ impl State {
     }
 
     pub async fn device_list_scenes(&self, device: &Device) -> anyhow::Result<Vec<String>> {
-        // TODO: some plumbing to maintain offline scene controls for preferred-LAN control
-        if let Some(client) = self.get_platform_client().await {
-            if let Some(info) = &device.http_device_info {
-                return Ok(sort_and_dedup_scenes(client.list_scene_names(info).await?));
-            }
-        }
-
-        if let Ok(categories) = GoveeUndocumentedApi::get_scenes_for_device(&device.sku).await {
-            let mut names = vec![];
-            for cat in categories {
-                for scene in cat.scenes {
-                    for effect in scene.light_effects {
-                        if effect.scene_code != 0 {
-                            names.push(scene.scene_name);
-                            break;
-                        }
-                    }
+        let models = extra_scene_models(device)?;
+        let mut names = match (self.get_platform_client().await, &device.http_device_info) {
+            (Some(client), Some(info)) => match client.list_scene_names(info).await {
+                Ok(names) => names,
+                Err(err) if models.is_empty() => return Err(err),
+                Err(err) => {
+                    log::warn!("Unable to list native scenes for {device}: {err:#}");
+                    vec![]
                 }
+            },
+            _ => lan_scene_names(&device.sku).await.unwrap_or_default(),
+        };
+
+        for model in models {
+            match lan_scene_names(&model).await {
+                Ok(scenes) => {
+                    names.extend(scenes.iter().map(|name| borrowed_scene_name(name, &model)));
+                }
+                Err(err) => log::warn!("Unable to list scenes for model {model}: {err:#}"),
             }
-            return Ok(sort_and_dedup_scenes(names));
         }
-
-        log::trace!("Platform API unavailable: Don't know how to list scenes for {device}");
-
-        Ok(vec![])
+        Ok(sort_and_dedup_scenes(names))
     }
 
     pub async fn device_set_target_temperature(
@@ -649,9 +646,10 @@ impl State {
         scene: &str,
     ) -> anyhow::Result<()> {
         // TODO: some plumbing to maintain offline scene controls for preferred-LAN control
-        let avoid_platform_api = device.avoid_platform_api();
+        let models = extra_scene_models(device)?;
+        let borrowed = borrowed_scene(scene, &models);
 
-        if !avoid_platform_api {
+        if borrowed.is_none() && !device.avoid_platform_api() {
             if let Some(client) = self.get_platform_client().await {
                 if let Some(info) = &device.http_device_info {
                     log::info!("Using Platform API to set {device} to scene {scene}");
@@ -665,8 +663,9 @@ impl State {
         }
 
         if let Some(lan_dev) = &device.lan_device {
+            let (model, name) = borrowed.unwrap_or((&lan_dev.sku, scene));
             log::info!("Using LAN API to set {device} to scene {scene}");
-            lan_dev.set_scene_by_name(scene).await?;
+            lan_dev.set_scene_by_name(model, name).await?;
 
             self.device_mut(&device.sku, &device.id)
                 .await
@@ -674,6 +673,9 @@ impl State {
             return Ok(());
         }
 
+        if borrowed.is_some() {
+            anyhow::bail!("Borrowed scene {scene} requires a LAN connection to {device}");
+        }
         anyhow::bail!("Unable to set scene for {device}");
     }
 
@@ -693,8 +695,64 @@ impl State {
     }
 }
 
+fn extra_scene_models(device: &Device) -> anyhow::Result<Vec<String>> {
+    let mut models = vec![];
+    if device.device_type() == DeviceType::Light {
+        if let Some(value) = crate::opt_env_var::<String>("GOVEE_EXTRA_SCENE_MODELS")? {
+            for model in value.split(',').map(str::trim) {
+                if !model.is_empty() && !model.eq_ignore_ascii_case(&device.sku) {
+                    models.push(model.to_ascii_uppercase());
+                }
+            }
+            models.sort();
+            models.dedup();
+        }
+    }
+    Ok(models)
+}
+
+async fn lan_scene_names(model: &str) -> anyhow::Result<Vec<String>> {
+    let mut names = vec![];
+    for category in GoveeUndocumentedApi::get_scenes_for_device(model).await? {
+        for scene in category.scenes {
+            if scene
+                .light_effects
+                .iter()
+                .any(|effect| effect.scene_code != 0)
+            {
+                names.push(scene.scene_name);
+            }
+        }
+    }
+    Ok(names)
+}
+
+fn borrowed_scene_name(name: &str, model: &str) -> String {
+    format!("{name} ({model})")
+}
+
+fn borrowed_scene<'a>(label: &'a str, models: &[String]) -> Option<(&'a str, &'a str)> {
+    let (name, model) = label.strip_suffix(')')?.rsplit_once(" (")?;
+    models.iter().any(|m| m == model).then_some((model, name))
+}
+
 pub fn sort_and_dedup_scenes(mut scenes: Vec<String>) -> Vec<String> {
     scenes.sort_by_key(|s| s.to_ascii_lowercase());
     scenes.dedup();
     scenes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn borrowed_scene_round_trip() {
+        let models = vec!["H608B".to_string()];
+        let label = borrowed_scene_name("Bonfire", "H608B");
+        assert_eq!(label, "Bonfire (H608B)");
+        assert_eq!(borrowed_scene(&label, &models), Some(("H608B", "Bonfire")));
+        assert_eq!(borrowed_scene("Bonfire", &models), None);
+        assert_eq!(borrowed_scene("Bonfire (H619A)", &models), None);
+    }
 }

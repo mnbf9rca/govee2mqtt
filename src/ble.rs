@@ -581,6 +581,30 @@ mod test {
     }
 
     #[test]
+    fn h608b_bonfire_packets() {
+        let param = "BRokAAABAgFBJQOAFBQC4woB/zkHFwDtEwD3ABokAAABAgFJJwOAFBQCgBQB/0cHFwD5AACAAB0AAAABAgGqBAPaCgoA9BQC/wAA/0AHAACAAACAABokAAABAgFNJQOAFBQCgBQB/xcHFQD8AACAAB0AAgUBAAFcNgPiCgoA9BQC/xwH/0AHAACAAACAAA==";
+        let command = SetSceneCode::new(5746, param.to_string());
+        let packets = Base64HexBytes::encode_for_sku("Generic:Light", &command)
+            .unwrap()
+            .base64();
+        assert_eq!(
+            packets,
+            [
+                "owABCQIFGiQAAAECAUElA4AUFHc=",
+                "owEC4woB/zkHFwDtEwD3ABokAKk=",
+                "owIAAQIBSScDgBQUAoAUAf9HB2Y=",
+                "owMXAPkAAIAAHQAAAAECAaoEA3w=",
+                "owTaCgoA9BQC/wAA/0AHAACAAFg=",
+                "owUAgAAaJAAAAQIBTSUDgBQUAvM=",
+                "owaAFAH/FwcVAPwAAIAAHQACBaw=",
+                "owcBAAFcNgPiCgoA9BQC/xwH/9Y=",
+                "o/9ABwAAgAAAgAAAAAAAAAAAABs=",
+                "MwUEchYAAAAAAAAAAAAAAAAAAFY=",
+            ]
+        );
+    }
+
+    #[test]
     fn scene_command() {
         const FOREST_SCENCE_PARAM: &str = "AyYAAQAKAgH/GQG0CgoCyBQF//8AAP//////AP//lP8AFAGWAAAAACMAAg8FAgH/FAH7AAAB+goEBP8AtP8AR///4/8AAAAAAAAAABoAAAABAgH/BQHIFBQC7hQBAP8AAAAAAAAAAA==";
         const FOREST_SCENE_CODE: u16 = 212;

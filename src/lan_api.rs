@@ -260,8 +260,8 @@ impl LanDevice {
         .await
     }
 
-    pub async fn set_scene_by_name(&self, scene_name: &str) -> anyhow::Result<()> {
-        for category in GoveeUndocumentedApi::get_scenes_for_device(&self.sku).await? {
+    pub async fn set_scene_by_name(&self, model: &str, scene_name: &str) -> anyhow::Result<()> {
+        for category in GoveeUndocumentedApi::get_scenes_for_device(model).await? {
             for scene in category.scenes {
                 for effect in scene.light_effects {
                     if scene.scene_name == scene_name && effect.scene_code != 0 {
