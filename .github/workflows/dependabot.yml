@@ -16,13 +16,20 @@ jobs:
       pull-requests: write
     steps:
       - id: metadata
+        if: github.event.pull_request.commits == 1
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-      - name: Enable auto-merge for patch and minor updates
-        if: >-
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+      - name: Apply the auto-merge policy to this revision
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: gh pr merge "$PR" --repo mnbf9rca/govee2mqtt --auto --merge --match-head-commit "$HEAD_SHA"
+          UPDATES: ${{ steps.metadata.outputs.updated-dependencies-json }}
+          AUTO_MERGE_ENABLED: ${{ github.event.pull_request.auto_merge != null }}
+        run: |
+          if jq -en --argjson updates "${UPDATES:-[]}" '
+            $updates | length > 0 and all(.[]; .updateType == "version-update:semver-patch" or .updateType == "version-update:semver-minor")
+          ' >/dev/null; then
+            gh pr merge "$PR" --repo mnbf9rca/govee2mqtt --auto --merge --match-head-commit "$HEAD_SHA"
+          elif [[ "$AUTO_MERGE_ENABLED" == true ]]; then
+            gh pr merge "$PR" --repo mnbf9rca/govee2mqtt --disable-auto
+          fi

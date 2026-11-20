@@ -1,9 +1,0 @@
-labels:
-  org.opencontainers.image.title: "Home Assistant Add-on: Govee to MQTT Bridge"
-  org.opencontainers.image.description: "Acts as a bridge between Govee devices and Home Assistant, via the Home Assistant MQTT Integration."
-  org.opencontainers.image.source: "https://github.com/mnbf9rca/govee2mqtt"
-  org.opencontainers.image.licenses: "MIT"
-
-build_from:
-  aarch64: "ghcr.io/home-assistant/aarch64-base-debian:bookworm"
-  amd64: "ghcr.io/home-assistant/amd64-base-debian:bookworm"
