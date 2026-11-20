@@ -1,4 +1,5 @@
 [toolchain]
+# Keep this aligned with the three toolchain inputs in .github/workflows/build.yml and pr.yml.
 channel = "1.100.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

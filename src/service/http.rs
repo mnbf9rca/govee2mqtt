@@ -1,3 +1,6 @@
+// Axum handlers return their complete HTTP error response.
+#![allow(clippy::result_large_err)]
+
 use crate::service::coordinator::Coordinator;
 use crate::service::device::{Device, DeviceState};
 use crate::service::state::StateHandle;
