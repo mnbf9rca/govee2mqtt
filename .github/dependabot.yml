@@ -20,10 +20,6 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-    ignore:
-      # sqlite-cache requires rusqlite 0.32. Track its replacement in issue #13.
-      - dependency-name: "rusqlite"
-        versions: [">= 0.33"]
     groups:
       cargo:
         patterns: ["*"]
