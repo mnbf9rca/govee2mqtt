@@ -280,7 +280,10 @@ impl LanDevice {
             }
         }
 
-        anyhow::bail!("unable to set scene {scene_name} for {}", self.device);
+        anyhow::bail!(
+            "unable to set scene {scene_name} from model {model} for {}",
+            self.device
+        );
     }
 }
 
