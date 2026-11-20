@@ -102,7 +102,6 @@ jobs:
       - name: Load the PR image and start the broker
         run: |
           docker load --input "$RUNNER_TEMP/bridge-image.tar"
-          docker pull "$MQTT_IMAGE"
           docker run --detach --name mqtt "$MQTT_IMAGE" mosquitto -c /mosquitto-no-auth.conf -v
       - name: Verify bridge start-up and Home Assistant discovery
         run: |
@@ -119,6 +118,8 @@ jobs:
             --env GOVEE_MQTT_HOST=localhost --env GOVEE_LAN_NO_MULTICAST=true govee2mqtt:startup-test
           wait "$subscriber"
           grep '^homeassistant/' "$RUNNER_TEMP/discovery.log"
+          # Registration errors pause for 30 seconds before exiting.
+          sleep 35
           test "$(docker inspect --format '{{.State.Running}}' bridge)" = true
           docker logs bridge 2>&1 | grep -F 'Connected to mqtt broker localhost:1883'
           SH
