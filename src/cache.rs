@@ -314,7 +314,8 @@ mod tests {
 
     #[tokio::test]
     async fn reads_existing_schema_after_reopening() {
-        let path = std::env::temp_dir().join(format!("govee-cache-{}.sqlite", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("govee-cache-{}.sqlite", uuid::Uuid::new_v4()));
         let entry = CacheEntry {
             expires: Utc::now() + Duration::from_secs(300),
             result: CacheResult::Ok(42u32),
