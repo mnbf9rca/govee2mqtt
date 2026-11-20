@@ -66,6 +66,16 @@ jobs:
         with:
           context: .
           platforms: linux/${{ matrix.arch }}
+          tags: govee2mqtt:startup-test
+          outputs: ${{ matrix.arch == 'amd64' && format('type=docker,dest={0}/bridge-image.tar', runner.temp) || '' }}
+      - name: Upload bridge image for the start-up test
+        if: github.event_name == 'pull_request' && matrix.arch == 'amd64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bridge-image-amd64
+          path: ${{ runner.temp }}/bridge-image.tar
+          if-no-files-found: error
+          retention-days: 1
       - name: Upload executable for publishing
         if: github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -74,6 +84,54 @@ jobs:
           path: docker-target/linux/${{ matrix.arch }}/govee
           if-no-files-found: error
           retention-days: 1
+
+  startup-test:
+    if: github.event_name == 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      MQTT_IMAGE: eclipse-mosquitto:2.0.22@sha256:81a6193ae693942a3231cd3ac52875b02b7e3a19da671b2fb4b55cc874c5b279
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bridge-image-amd64
+          path: ${{ runner.temp }}
+      - name: Load the PR image and start the broker
+        run: |
+          docker load --input "$RUNNER_TEMP/bridge-image.tar"
+          docker pull "$MQTT_IMAGE"
+          docker run --detach --name mqtt "$MQTT_IMAGE" mosquitto -c /mosquitto-no-auth.conf -v
+      - name: Verify bridge start-up and Home Assistant discovery
+        run: |
+          status=0
+          timeout 60s bash -euo pipefail <<'SH' || status=$?
+          until docker exec mqtt mosquitto_pub -t ci/ready -m ready; do sleep 1; done
+          docker exec mqtt mosquitto_sub -i startup-test -v -t 'homeassistant/+/+/config' -C 1 > "$RUNNER_TEMP/discovery.log" 2>&1 &
+          subscriber=$!
+          until docker logs mqtt 2>&1 | grep -q 'Sending SUBACK to startup-test'; do
+            kill -0 "$subscriber"
+            sleep 1
+          done
+          docker run --detach --name bridge --network container:mqtt \
+            --env GOVEE_MQTT_HOST=localhost --env GOVEE_LAN_NO_MULTICAST=true govee2mqtt:startup-test
+          wait "$subscriber"
+          grep '^homeassistant/' "$RUNNER_TEMP/discovery.log"
+          test "$(docker inspect --format '{{.State.Running}}' bridge)" = true
+          docker logs bridge 2>&1 | grep -F 'Connected to mqtt broker localhost:1883'
+          SH
+          if [[ "$status" == 124 ]]; then
+            echo '::error::Timed out after 60 seconds waiting for bridge start-up and Home Assistant discovery.'
+          fi
+          exit "$status"
+      - name: Print logs on failure
+        if: failure()
+        run: |
+          docker logs bridge || true
+          docker logs mqtt || true
+          cat "$RUNNER_TEMP/discovery.log" || true
 
   publish:
     if: github.event_name == 'push'
