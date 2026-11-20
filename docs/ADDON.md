@@ -53,7 +53,7 @@ when we get to that point.
 ![image](https://github.com/wez/govee-lan-hass/assets/117777/c425615b-d7be-4ff2-a0d9-c8b7cfb8b63e)
 
 4. Click on "Repositories"
-5. Enter `https://github.com/wez/govee2mqtt` and click "Add"
+5. Enter `https://github.com/mnbf9rca/govee2mqtt` and click "Add"
 6. You should see:
 
 ![image](https://github.com/wez/govee-lan-hass/assets/117777/a2603e2d-dec1-4711-8d94-c957bf4a7a01)
@@ -63,7 +63,7 @@ when we get to that point.
 
 ![image](https://github.com/wez/govee-lan-hass/assets/117777/4e70f5e4-d54e-4e95-94db-b1d4a562eab1)
 
-9. Click on it
+9. Click on "Govee to MQTT Bridge (mnbf9rca)"
 10. Click "install"
 11. At the top of the screen is a "Configuration" tab, click it
 
