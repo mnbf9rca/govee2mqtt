@@ -1,5 +1,9 @@
 # Govee to MQTT bridge for Home Assistant
 
+This fork adds the optional `extra_scene_models` setting (`GOVEE_EXTRA_SCENE_MODELS`
+in Docker). Set it to a comma-separated list such as `H608B` to see effects like
+`Bonfire (H608B)` in Home Assistant and play them over LAN.
+
 This repo provides a `govee` executable whose primary purpose is to act
 as a bridge between [Govee](https://govee.com) devices and Home Assistant,
 via the [Home Assistant MQTT Integration](https://www.home-assistant.io/integrations/mqtt/).
