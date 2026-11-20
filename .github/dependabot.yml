@@ -12,6 +12,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "cargo"
     directory: "/"
@@ -20,15 +21,13 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # Color parsing changes wait on the owner's ruling.
-      - dependency-name: "csscolorparser"
-        versions: [">= 0.9"]
       # sqlite-cache requires rusqlite 0.32. Track its replacement in issue #13.
       - dependency-name: "rusqlite"
         versions: [">= 0.33"]
     groups:
       cargo:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "docker"
     directories: ["/", "/addon"]
@@ -39,3 +38,4 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
